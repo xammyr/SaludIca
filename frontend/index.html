@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema - Botica Salud Ica</title>
+    <style>
+        :root {
+            --primary: #0056b3;
+            --bg: #f4f7f6;
+            --text: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 800px;
+        }
+        .dashboard {
+            display: none;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        input, button {
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background-color: #004494; }
+        .alert { color: #dc3545; font-size: 14px; margin-top: 10px; }
+        
+        #timer { font-weight: bold; color: #dc3545; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="login-container">
+    <h2>Botica Salud Ica - Ingreso</h2>
+    <div class="form-group">
+        <label>Usuario</label>
+        <input type="text" id="username" placeholder="admin o caja1">
+    </div>
+    <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="password">
+    </div>
+    <button onclick="iniciarSesion()">Ingresar al Sistema</button>
+    <div id="login-error" class="alert"></div>
+</div>
+
+<div class="container dashboard" id="dashboard-container">
+    <div class="header">
+        <h2 id="welcome-msg">Panel</h2>
+        <div>
+            <span>Sesión expira en: <span id="timer">--:--</span></span>
+            <button onclick="cerrarSesion()" style="margin-left: 15px; background: #dc3545;">Salir</button>
+        </div>
+    </div>
+    
+    <!-- Panel de Administrador -->
+    <div id="panel-admin" style="display: none;">
+        <h3>Gestión de Precios (Acceso Crítico)</h3>
+        <p>Aquí puede modificar precios, crear usuarios y ver reportes de caja. La sesión se cerrará automáticamente en 5 minutos para evitar accesos no autorizados.</p>
+        <button>Actualizar Precios</button>
+        <button>Ver Reporte de Caja</button>
+    </div>
+
+    <!-- Panel de Cajero -->
+    <div id="panel-cajero" style="display: none;">
+        <h3>Punto de Venta (Turno Activo)</h3>
+        <p>Registro de ventas continuo. La sesión requiere re-autenticación cada 10 minutos.</p>
+        <div class="form-group">
+            <input type="text" placeholder="Código de barras o nombre del producto...">
+            <button style="margin-top: 10px;">Agregar a la venta</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let sessionTimeout;
+    let countdownInterval;
+
+    async function iniciarSesion() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        
+        try {
+            const response = await fetch('http://localhost:8080/api/botica/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: u, password: p })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                iniciarEntorno(data);
+            } else {
+                document.getElementById('login-error').innerText = "Credenciales incorrectas.";
+            }
+        } catch (error) {
+            document.getElementById('login-error').innerText = "Error conectando al servidor.";
+        }
+    }
+
+    function iniciarEntorno(data) {
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('dashboard-container').style.display = 'grid';
+        document.getElementById('welcome-msg').innerText = `Panel de ${data.rol} - ${data.username}`;
+        
+        if (data.rol === 'ADMIN') {
+            document.getElementById('panel-admin').style.display = 'block';
+        } else {
+            document.getElementById('panel-cajero').style.display = 'block';
+        }
+
+        const tiempoRestanteMs = data.expiracionMs - Date.now();
+        
+        sessionTimeout = setTimeout(() => {
+            alert("Su sesión ha expirado por seguridad. Por favor, vuelva a ingresar.");
+            cerrarSesion();
+        }, tiempoRestanteMs);
+
+        actualizarReloj(data.expiracionMs);
+        countdownInterval = setInterval(() => actualizarReloj(data.expiracionMs), 1000);
+    }
+
+    function actualizarReloj(expiracionMs) {
+        const restante = Math.max(0, expiracionMs - Date.now());
+        const minutos = Math.floor(restante / 60000);
+        const segundos = Math.floor((restante % 60000) / 1000);
+        document.getElementById('timer').innerText = 
+            `${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+    }
+
+    function cerrarSesion() {
+        clearTimeout(sessionTimeout);
+        clearInterval(countdownInterval);
+        document.getElementById('dashboard-container').style.display = 'none';
+        document.getElementById('panel-admin').style.display = 'none';
+        document.getElementById('panel-cajero').style.display = 'none';
+        document.getElementById('login-container').style.display = 'block';
+        document.getElementById('password').value = '';
+    }
+</script>
+</body>
+</html>
